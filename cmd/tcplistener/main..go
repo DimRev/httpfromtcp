@@ -10,15 +10,10 @@ import (
 
 const PATH_TO_FILE = "./messages.txt"
 const BUFFER_SIZE = 8
+const PORT = "42069"
 
 func main() {
-	// file, err := os.Open(PATH_TO_FILE)
-	// if err != nil {
-	// 	log.Fatalf("Error opening file: %v", err)
-	// }
-	// defer file.Close()
-
-	listener, err := net.Listen("tcp", ":42069")
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", PORT))
 	if err != nil {
 		log.Fatalf("Error listening: %v", err)
 	}
