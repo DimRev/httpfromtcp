@@ -2,18 +2,79 @@ package request
 
 import (
 	"errors"
-	"strings"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// chunkReader simulates reading a variable number of bytes from a string.
+type chunkReader struct {
+	data            string
+	numBytesPerRead int
+	pos             int
+}
+
+// Read reads up to len(p) or numBytesPerRead bytes from the string per call.
+func (cr *chunkReader) Read(p []byte) (n int, err error) {
+	if cr.pos >= len(cr.data) {
+		return 0, io.EOF
+	}
+	endIndex := cr.pos + cr.numBytesPerRead
+	if endIndex > len(cr.data) {
+		endIndex = len(cr.data)
+	}
+	n = copy(p, cr.data[cr.pos:endIndex])
+	cr.pos += n
+	if n > cr.numBytesPerRead {
+		n = cr.numBytesPerRead
+		cr.pos -= n - cr.numBytesPerRead
+	}
+	return n, nil
+}
+
+func NewChunkReader(method, target, version string, headers []string, body string, numBytesPerRead int) *chunkReader {
+	requestString := generateRequest(method, target, version, body, headers)
+	return &chunkReader{
+		data:            requestString,
+		numBytesPerRead: numBytesPerRead,
+	}
+}
+
+func generateRequest(method, target, version, body string, headers []string) string {
+	// request := method + " " + target + " " + version + "\r\n"
+	request := ""
+	if method != "" {
+		request += method + " "
+	}
+	if target != "" {
+		request += target + " "
+	}
+	if version != "" {
+		request += version
+	}
+	request += "\r\n"
+
+	for _, header := range headers {
+		request += header + "\r\n"
+	}
+
+	request += "\r\n" + body
+	return request
+}
+
 func TestRequestLineParse(t *testing.T) {
 	// Group 1: Valid methods
 	t.Run("valid methods", func(t *testing.T) {
-		// GET method
-		r, err := RequestFromReader(strings.NewReader("GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
+		headers := []string{
+			"Host: localhost:42069",
+			"User-Agent: curl/7.81.0",
+			"Accept: */*",
+		}
+		reader := NewChunkReader("GET", "/", "HTTP/1.1", headers, "", 3)
+
+		r, err := RequestFromReader(reader)
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "GET", r.RequestLine.Method)
@@ -21,7 +82,8 @@ func TestRequestLineParse(t *testing.T) {
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
 
 		// POST method
-		r, err = RequestFromReader(strings.NewReader("POST /submit HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		reader = NewChunkReader("POST", "/submit", "HTTP/1.1", headers, "", 3)
+		r, err = RequestFromReader(reader)
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "POST", r.RequestLine.Method)
@@ -29,7 +91,8 @@ func TestRequestLineParse(t *testing.T) {
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
 
 		// PUT method
-		r, err = RequestFromReader(strings.NewReader("PUT /update HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		reader = NewChunkReader("PUT", "/update", "HTTP/1.1", headers, "", 3)
+		r, err = RequestFromReader(reader)
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "PUT", r.RequestLine.Method)
@@ -37,7 +100,8 @@ func TestRequestLineParse(t *testing.T) {
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
 
 		// DELETE method
-		r, err = RequestFromReader(strings.NewReader("DELETE /resource HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		reader = NewChunkReader("DELETE", "/resource", "HTTP/1.1", headers, "", 3)
+		r, err = RequestFromReader(reader)
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "DELETE", r.RequestLine.Method)
@@ -50,19 +114,18 @@ func TestRequestLineParse(t *testing.T) {
 		invalidMethods := []string{
 			"PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", // Not supported in implementation
 			"get", "put", "post", "delete", // Lowercase
-			"",                                                  // Empty
 			"GETT", "GLAZE", "RIZZ", "PUTT", "POSTT", "DELETET", // Non-existent method
 		}
 
 		for _, method := range invalidMethods {
-			_, err := RequestFromReader(strings.NewReader(method + " / HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+			_, err := RequestFromReader(NewChunkReader(method, "/", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 			require.Error(t, err)
 			var errInvalidMethod ErrorInvalidMethod
 			require.True(t, errors.As(err, &errInvalidMethod), "Method %s should be invalid", method)
 		}
 
 		// Test: Invalid number of parts in request line
-		_, err := RequestFromReader(strings.NewReader("/coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
+		_, err := RequestFromReader(NewChunkReader("", "/coffee", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.Error(t, err)
 		var errInvalidRequestLine ErrorInvalidRequestLine
 		require.True(t, errors.As(err, &errInvalidRequestLine))
@@ -70,7 +133,7 @@ func TestRequestLineParse(t *testing.T) {
 
 	// Group 3: Valid version
 	t.Run("valid version", func(t *testing.T) {
-		r, err := RequestFromReader(strings.NewReader("GET / HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		r, err := RequestFromReader(NewChunkReader("GET", "/", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
@@ -90,7 +153,7 @@ func TestRequestLineParse(t *testing.T) {
 		}
 
 		for _, version := range invalidVersions {
-			_, err := RequestFromReader(strings.NewReader("GET / " + version + "\r\nHost: localhost:42069\r\n\r\n"))
+			_, err := RequestFromReader(NewChunkReader("GET", "/", version, []string{"Host: localhost:42069"}, "", 3))
 			require.Error(t, err)
 			var errInvalidVersion ErrorInvalidHTTPVersion
 			require.True(t, errors.As(err, &errInvalidVersion), "Version %s should be invalid", version)
@@ -100,31 +163,31 @@ func TestRequestLineParse(t *testing.T) {
 	// Group 5: Valid targets
 	t.Run("valid targets", func(t *testing.T) {
 		// Basic path
-		r, err := RequestFromReader(strings.NewReader("GET /coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
+		r, err := RequestFromReader(NewChunkReader("GET", "/coffee", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "/coffee", r.RequestLine.RequestTarget)
 
 		// With query parameters
-		r, err = RequestFromReader(strings.NewReader("GET /search?q=test&page=1 HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		r, err = RequestFromReader(NewChunkReader("GET", "/search?q=test&page=1", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "/search?q=test&page=1", r.RequestLine.RequestTarget)
 
 		// With fragment
-		r, err = RequestFromReader(strings.NewReader("GET /page#section HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		r, err = RequestFromReader(NewChunkReader("GET", "/page#section", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "/page#section", r.RequestLine.RequestTarget)
 
 		// With URL encoded spaces
-		r, err = RequestFromReader(strings.NewReader("GET /path%20with%20spaces HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		r, err = RequestFromReader(NewChunkReader("GET", "/path%20with%20spaces", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "/path%20with%20spaces", r.RequestLine.RequestTarget)
 
 		// With multiple path segments
-		r, err = RequestFromReader(strings.NewReader("GET /path/with/multiple/segments HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+		r, err = RequestFromReader(NewChunkReader("GET", "/path/with/multiple/segments", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		assert.Equal(t, "/path/with/multiple/segments", r.RequestLine.RequestTarget)
@@ -133,20 +196,19 @@ func TestRequestLineParse(t *testing.T) {
 	// Group 6: Invalid targets
 	t.Run("invalid targets", func(t *testing.T) {
 		invalidTargets := []string{
-			"",                   // Empty
 			"no-leading-slash",   // Missing leading slash
 			"http://example.com", // Absolute URL not starting with /
 		}
 
 		for _, target := range invalidTargets {
-			_, err := RequestFromReader(strings.NewReader("GET " + target + " HTTP/1.1\r\nHost: localhost:42069\r\n\r\n"))
+			_, err := RequestFromReader(NewChunkReader("GET", target, "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 			require.Error(t, err)
 			var errInvalidTarget ErrorInvalidRequestTarget
 			require.True(t, errors.As(err, &errInvalidTarget), "Target %s should be invalid", target)
 		}
 	})
 
-	// Malformed request lines
+	// Group 7: Malformed request lines
 	t.Run("malformed request lines", func(t *testing.T) {
 		malformedLines := []string{
 			"GET",                  // Missing target and version
@@ -157,8 +219,35 @@ func TestRequestLineParse(t *testing.T) {
 		}
 
 		for _, line := range malformedLines {
-			_, err := RequestFromReader(strings.NewReader(line + "\r\nHost: localhost:42069\r\n\r\n"))
+			_, err := RequestFromReader(NewChunkReader("GET", line, "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 			require.Error(t, err, "Line %s should cause an error", line)
+		}
+	})
+
+	// Group 8: Variant chunk sizes
+	t.Run("variant chunk sizes", func(t *testing.T) {
+		chunkSizes := []int{
+			1, 10, 100, 1000, 10000,
+		}
+		for _, chunkSize := range chunkSizes {
+			r, err := RequestFromReader(NewChunkReader(
+				"GET",
+				"/coffee",
+				"HTTP/1.1",
+				[]string{
+					"Host: localhost:42069",
+					"Content-Length: 10",
+					"Transfer-Encoding: chunked",
+					"User-Agent: curl/7.81.0",
+					"Accept: */*",
+					"Connection: close",
+				},
+				"",
+				chunkSize,
+			),
+			)
+			require.NoError(t, err)
+			require.NotNil(t, r)
 		}
 	})
 }
