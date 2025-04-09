@@ -4,6 +4,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+	// Import errors package if you use custom error types defined elsewhere
+	// "errors"
 )
 
 type Request struct {
@@ -18,7 +20,7 @@ type RequestLine struct {
 	Method        string
 }
 
-const BUFFER_SIZE = 1
+const BUFFER_SIZE = 4096
 const CRLF = "\r\n"
 
 type ParsingStage int
@@ -52,63 +54,67 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	stage := RequestLineParsingStage
 
 	for {
-		n, err := reader.Read(buf)
-		if err != nil && err != io.EOF {
-			return nil, &ErrorReadingRequest{
-				Err: err,
-			}
-		}
-
-		buffer += string(buf[:n])
-
-		var parseErr error
-		buffer, parseErr = req.parse(buffer, &stage)
+		remainingBuffer, parseErr := req.parse(buffer, &stage)
 		if parseErr != nil {
 			return nil, parseErr
 		}
+		buffer = remainingBuffer
 
-		if err == io.EOF {
-			if stage == BodyParsingStage {
-				req.Body = []byte(buffer)
-			}
-			break
+		if stage == BodyParsingStage {
+			req.Body = []byte(buffer)
+			return req, nil
 		}
-	}
 
-	return req, nil
+		n, err := reader.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				return nil, io.ErrUnexpectedEOF
+			}
+			return nil, &ErrorReadingRequest{Err: err}
+		}
+
+		if n == 0 {
+			continue
+		}
+
+		buffer += string(buf[:n])
+	}
 }
 
-func (r *Request) parse(buffer string, stage *ParsingStage) (string, error) {
-	for {
-		newLineIndex := strings.Index(buffer, CRLF)
+func (r *Request) parse(currentBuffer string, stage *ParsingStage) (string, error) {
+	for *stage != BodyParsingStage {
+		newLineIndex := strings.Index(currentBuffer, CRLF)
 		if newLineIndex == -1 {
-			break
+			return currentBuffer, nil
 		}
 
-		line := buffer[:newLineIndex]
-		buffer = buffer[newLineIndex+len(CRLF):]
+		line := currentBuffer[:newLineIndex]
+		remainingBuffer := currentBuffer[newLineIndex+len(CRLF):]
 
 		switch *stage {
 		case RequestLineParsingStage:
 			if line == "" {
+				currentBuffer = remainingBuffer
 				continue
 			}
 			if err := r.parseRequestLine(line); err != nil {
 				return "", err
 			}
 			*stage = HeadersParsingStage
+			currentBuffer = remainingBuffer
 
 		case HeadersParsingStage:
 			if line == "" {
 				*stage = BodyParsingStage
-				continue
+				return remainingBuffer, nil
 			}
 			if err := r.parseHeaders(line); err != nil {
 				return "", err
 			}
+			currentBuffer = remainingBuffer
 		}
 	}
-	return buffer, nil
+	return currentBuffer, nil
 }
 
 func (r *Request) parseRequestLine(line string) error {

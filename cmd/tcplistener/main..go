@@ -2,14 +2,12 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"strings"
+
+	"github.com/DimRev/httpfromtcp/internal/request"
 )
 
-const PATH_TO_FILE = "./messages.txt"
-const BUFFER_SIZE = 8
 const PORT = "42069"
 
 func main() {
@@ -18,49 +16,28 @@ func main() {
 		log.Fatalf("Error listening: %v", err)
 	}
 	defer listener.Close()
-	conn, err := listener.Accept()
-	if err != nil {
-		log.Fatalf("Error accepting: %v", err)
-	}
-	defer conn.Close()
 
-	linesCh := getLinesChannel(conn)
-
-	for line := range linesCh {
-		fmt.Printf("%s\n", line)
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Fatalf("Error accepting: %v", err)
+		}
+		go handleConnection(conn) // Handle each connection in a goroutine
 	}
 }
 
-func getLinesChannel(f io.ReadCloser) <-chan string {
-	lineCh := make(chan string)
-	go func() {
-		b := make([]byte, BUFFER_SIZE)
-		currentLine := ""
-		for {
-			n, err := f.Read(b)
-			if err != nil && err != io.EOF {
-				close(lineCh)
-				log.Fatalf("Error reading file: %v", err)
-			}
-			if n > 0 {
-				currentLine += string(b[:n])
-			}
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
 
-			splitLines := strings.Split(currentLine, "\n")
-			for i := 0; i < len(splitLines)-1; i++ {
-				lineCh <- splitLines[i]
-			}
-			currentLine = splitLines[len(splitLines)-1]
+	req, err := request.RequestFromReader(conn)
+	if err != nil {
+		log.Printf("Error reading request: %v", err)
+		return
+	}
 
-			if err == io.EOF {
-				if currentLine != "" {
-					lineCh <- currentLine
-				}
-				close(lineCh)
-				break
-			}
-		}
-	}()
-
-	return lineCh
+	fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n\n",
+		req.RequestLine.Method,
+		req.RequestLine.RequestTarget,
+		req.RequestLine.HttpVersion,
+	)
 }
