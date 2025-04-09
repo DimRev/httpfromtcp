@@ -61,47 +61,54 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		buffer += string(buf[:n])
 
-		for {
-			newLineIndex := strings.Index(buffer, CRLF)
-			if newLineIndex == -1 {
-				break
-			}
-
-			line := buffer[:newLineIndex]
-			buffer = buffer[newLineIndex+len(CRLF):]
-
-			switch stage {
-			case RequestLineParsingStage:
-				if line == "" {
-					continue
-				}
-				if err := req.parseRequestLine(line); err != nil {
-					return nil, err
-				}
-				stage = HeadersParsingStage
-
-			case HeadersParsingStage:
-				if line == "" {
-					return req, nil
-				}
-				headerParts := strings.SplitN(line, ":", 2)
-				if len(headerParts) != 2 {
-					return nil, ErrorInvalidHeaderLine{
-						HeaderLine: line,
-					}
-				}
-				key := strings.TrimSpace(headerParts[0])
-				value := strings.TrimSpace(headerParts[1])
-				req.Headers[key] = value
-			}
+		var parseErr error
+		buffer, parseErr = req.parse(buffer, &stage)
+		if parseErr != nil {
+			return nil, parseErr
 		}
 
 		if err == io.EOF {
+			if stage == BodyParsingStage {
+				req.Body = []byte(buffer)
+			}
 			break
 		}
 	}
 
-	return nil, ErrorIncompleteRequest{}
+	return req, nil
+}
+
+func (r *Request) parse(buffer string, stage *ParsingStage) (string, error) {
+	for {
+		newLineIndex := strings.Index(buffer, CRLF)
+		if newLineIndex == -1 {
+			break
+		}
+
+		line := buffer[:newLineIndex]
+		buffer = buffer[newLineIndex+len(CRLF):]
+
+		switch *stage {
+		case RequestLineParsingStage:
+			if line == "" {
+				continue
+			}
+			if err := r.parseRequestLine(line); err != nil {
+				return "", err
+			}
+			*stage = HeadersParsingStage
+
+		case HeadersParsingStage:
+			if line == "" {
+				*stage = BodyParsingStage
+				continue
+			}
+			if err := r.parseHeaders(line); err != nil {
+				return "", err
+			}
+		}
+	}
+	return buffer, nil
 }
 
 func (r *Request) parseRequestLine(line string) error {
@@ -124,6 +131,20 @@ func (r *Request) parseRequestLine(line string) error {
 		return err
 	}
 
+	return nil
+}
+
+func (r *Request) parseHeaders(line string) error {
+	line = strings.TrimSpace(line)
+	headerParts := strings.SplitN(line, ": ", 2)
+	if len(headerParts) != 2 {
+		return ErrorInvalidHeaderLine{
+			HeaderLine: line,
+		}
+	}
+	key := strings.TrimSpace(headerParts[0])
+	value := strings.TrimSpace(headerParts[1])
+	r.Headers[key] = value
 	return nil
 }
 
