@@ -2,6 +2,7 @@ package headers
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"github.com/DimRev/httpfromtcp/internal/request"
@@ -52,7 +53,14 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		if err != nil {
 			return 0, false, err
 		}
-		h[strings.ToLower(key)] = value
+
+		curr, exists := h[strings.ToLower(key)]
+		if exists {
+			h[strings.ToLower(key)] = fmt.Sprintf("%s, %s", curr, value)
+		} else {
+			h[strings.ToLower(key)] = value
+		}
+
 		totalBytesParsed += idx + len(request.CRLF)
 		data = data[idx+len(request.CRLF):]
 	}

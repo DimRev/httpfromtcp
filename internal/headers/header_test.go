@@ -131,4 +131,16 @@ func TestHeaderParse(t *testing.T) {
 		assert.Equal(t, len("Host: localhost:42069   \r\n"), n)
 		assert.False(t, done) // Not done yet, more headers may follow
 	})
+
+	// Group 4: Multiple values for same key
+	t.Run("multiple values for same key", func(t *testing.T) {
+		headers := NewHeaders()
+		data := []byte("Host: localhost:42069\r\nHost: localhost:69420\r\na: 1\r\na: 2\r\na: 3\r\n")
+		n, done, err := headers.Parse(data)
+		require.NoError(t, err)
+		assert.Equal(t, "localhost:42069, localhost:69420", headers["host"])
+		assert.Equal(t, "1, 2, 3", headers["a"])
+		assert.Equal(t, len("Host: localhost:42069\r\nHost: localhost:69420\r\na: 1\r\na: 2\r\na: 3\r\n"), n)
+		assert.False(t, done) // Not done yet, more headers may follow
+	})
 }
