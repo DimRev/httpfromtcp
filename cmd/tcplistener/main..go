@@ -35,9 +35,15 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n\n",
+	formattedHeaders := ""
+	for key, value := range req.Headers {
+		formattedHeaders += fmt.Sprintf("- %s: %s\n", key, value)
+	}
+
+	fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\nHeaders:\n%s\n",
 		req.RequestLine.Method,
 		req.RequestLine.RequestTarget,
 		req.RequestLine.HttpVersion,
+		formattedHeaders,
 	)
 }
