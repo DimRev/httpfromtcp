@@ -120,14 +120,14 @@ func TestRequestLineParse(t *testing.T) {
 		for _, method := range invalidMethods {
 			_, err := RequestFromReader(NewChunkReader(method, "/", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 			require.Error(t, err)
-			var errInvalidMethod ErrorInvalidMethod
+			var errInvalidMethod *ErrorParsingRequestInvalidMethod
 			require.True(t, errors.As(err, &errInvalidMethod), "Method %s should be invalid", method)
 		}
 
 		// Test: Invalid number of parts in request line
 		_, err := RequestFromReader(NewChunkReader("", "/coffee", "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 		require.Error(t, err)
-		var errInvalidRequestLine ErrorInvalidRequestLine
+		var errInvalidRequestLine *ErrorParsingRequestLineMalformed
 		require.True(t, errors.As(err, &errInvalidRequestLine))
 	})
 
@@ -155,7 +155,7 @@ func TestRequestLineParse(t *testing.T) {
 		for _, version := range invalidVersions {
 			_, err := RequestFromReader(NewChunkReader("GET", "/", version, []string{"Host: localhost:42069"}, "", 3))
 			require.Error(t, err)
-			var errInvalidVersion ErrorInvalidHTTPVersion
+			var errInvalidVersion *ErrorParsingRequestInvalidVersion
 			require.True(t, errors.As(err, &errInvalidVersion), "Version %s should be invalid", version)
 		}
 	})
@@ -203,7 +203,7 @@ func TestRequestLineParse(t *testing.T) {
 		for _, target := range invalidTargets {
 			_, err := RequestFromReader(NewChunkReader("GET", target, "HTTP/1.1", []string{"Host: localhost:42069"}, "", 3))
 			require.Error(t, err)
-			var errInvalidTarget ErrorInvalidRequestTarget
+			var errInvalidTarget *ErrorParsingRequestInvalidTarget
 			require.True(t, errors.As(err, &errInvalidTarget), "Target %s should be invalid", target)
 		}
 	})

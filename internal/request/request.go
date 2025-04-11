@@ -1,6 +1,8 @@
 package request
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -10,8 +12,7 @@ import (
 
 type Request struct {
 	RequestLine RequestLine
-	Headers     map[string]string
-	Body        []byte
+	state       requestState
 }
 
 type RequestLine struct {
@@ -20,24 +21,15 @@ type RequestLine struct {
 	Method        string
 }
 
-const BUFFER_SIZE = 4096
+const BUFFER_SIZE = 8
 const CRLF = "\r\n"
 
-type ParsingStage int
+type requestState int
 
 const (
-	RequestLineParsingStage ParsingStage = iota
-	HeadersParsingStage
-	BodyParsingStage
+	requestStateInitialized requestState = iota
+	requestStateDone
 )
-
-func NewRequest() *Request {
-	return &Request{
-		RequestLine: NewRequestLine(),
-		Headers:     make(map[string]string),
-		Body:        []byte{},
-	}
-}
 
 func NewRequestLine() RequestLine {
 	return RequestLine{
@@ -49,144 +41,125 @@ func NewRequestLine() RequestLine {
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, BUFFER_SIZE)
-	buffer := ""
-	req := NewRequest()
-	stage := RequestLineParsingStage
+	readToIndex := 0
+	req := &Request{
+		state: requestStateInitialized,
+	}
 
-	for {
-		remainingBuffer, parseErr := req.parse(buffer, &stage)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		buffer = remainingBuffer
-
-		if stage == BodyParsingStage {
-			req.Body = []byte(buffer)
-			return req, nil
+	for req.state != requestStateDone {
+		if readToIndex >= len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
 		}
 
-		n, err := reader.Read(buf)
+		numBytesRead, err := reader.Read(buf[readToIndex:])
 		if err != nil {
-			if err == io.EOF {
-				return nil, io.ErrUnexpectedEOF
+			if errors.Is(err, io.EOF) {
+				if req.state != requestStateDone {
+					return nil, &ErrorIncompleteRequest{}
+				}
+				break
 			}
-			return nil, &ErrorReadingRequest{Err: err}
+			return nil, &ErrorUnexpectedReadError{Err: err}
 		}
 
+		readToIndex += numBytesRead
+
+		numBytesParsed, err := req.parse(buf[:readToIndex])
+		if err != nil {
+			return nil, err
+		}
+
+		copy(buf, buf[numBytesParsed:])
+		readToIndex -= numBytesParsed
+	}
+	return req, nil
+}
+
+func (r *Request) parse(currentBuffer []byte) (int, error) {
+	switch r.state {
+	case requestStateInitialized:
+		requestLine, n, err := parseRequestLine(currentBuffer)
+		if err != nil {
+			return 0, err
+		}
 		if n == 0 {
-			continue
+			return 0, nil
 		}
-
-		buffer += string(buf[:n])
+		r.RequestLine = *requestLine
+		r.state = requestStateDone
+		return n, nil
+	case requestStateDone:
+		return 0, &ErrorParsingTryingToReadAfterDone{}
+	default:
+		return 0, &ErrorParsingUnknownState{State: r.state}
 	}
 }
 
-func (r *Request) parse(currentBuffer string, stage *ParsingStage) (string, error) {
-	for *stage != BodyParsingStage {
-		newLineIndex := strings.Index(currentBuffer, CRLF)
-		if newLineIndex == -1 {
-			return currentBuffer, nil
-		}
-
-		line := currentBuffer[:newLineIndex]
-		remainingBuffer := currentBuffer[newLineIndex+len(CRLF):]
-
-		switch *stage {
-		case RequestLineParsingStage:
-			if line == "" {
-				currentBuffer = remainingBuffer
-				continue
-			}
-			if err := r.parseRequestLine(line); err != nil {
-				return "", err
-			}
-			*stage = HeadersParsingStage
-			currentBuffer = remainingBuffer
-
-		case HeadersParsingStage:
-			if line == "" {
-				*stage = BodyParsingStage
-				return remainingBuffer, nil
-			}
-			if err := r.parseHeaders(line); err != nil {
-				return "", err
-			}
-			currentBuffer = remainingBuffer
-		}
+func parseRequestLine(data []byte) (*RequestLine, int, error) {
+	idx := bytes.Index(data, []byte(CRLF))
+	if idx == -1 {
+		return nil, 0, nil
 	}
-	return currentBuffer, nil
-}
-
-func (r *Request) parseRequestLine(line string) error {
+	line := string(data[:idx])
 	parts := strings.Split(line, " ")
 	if len(parts) != 3 {
-		return ErrorInvalidRequestLine{
-			Line: line,
-		}
+		return nil, 0, &ErrorParsingRequestLineMalformed{Line: line}
 	}
 
-	if err := r.assignMethod(parts[0]); err != nil {
-		return err
+	method, err := assignMethod(parts[0])
+	if err != nil {
+		return nil, 0, err
+	}
+	target, err := assignRequestTarget(parts[1])
+	if err != nil {
+		return nil, 0, err
+	}
+	version, err := assignHttpVersion(parts[2])
+	if err != nil {
+		return nil, 0, err
 	}
 
-	if err := r.assignRequestTarget(parts[1]); err != nil {
-		return err
+	requestLine := &RequestLine{
+		Method:        method,
+		RequestTarget: target,
+		HttpVersion:   version,
 	}
 
-	if err := r.assignHttpVersion(parts[2]); err != nil {
-		return err
-	}
-
-	return nil
+	return requestLine, idx + len(CRLF), nil
 }
 
-func (r *Request) parseHeaders(line string) error {
-	line = strings.TrimSpace(line)
-	headerParts := strings.SplitN(line, ": ", 2)
-	if len(headerParts) != 2 {
-		return ErrorInvalidHeaderLine{
-			HeaderLine: line,
-		}
-	}
-	key := strings.TrimSpace(headerParts[0])
-	value := strings.TrimSpace(headerParts[1])
-	r.Headers[key] = value
-	return nil
-}
-
-func (r *Request) assignMethod(m string) error {
+func assignMethod(m string) (string, error) {
 	validMethods := []string{"GET", "POST", "PUT", "DELETE"}
 	if !slices.Contains(validMethods, m) {
-		return ErrorInvalidMethod{
+		return "", &ErrorParsingRequestInvalidMethod{
 			Method: m,
 		}
 	}
-	r.RequestLine.Method = m
-	return nil
+	return m, nil
 }
 
-func (r *Request) assignRequestTarget(target string) error {
+func assignRequestTarget(target string) (string, error) {
 	if !strings.HasPrefix(target, "/") {
-		return ErrorInvalidRequestTarget{
+		return "", &ErrorParsingRequestInvalidTarget{
 			Target: target,
 		}
 	}
-	r.RequestLine.RequestTarget = target
-	return nil
+	return target, nil
 }
 
-func (r *Request) assignHttpVersion(version string) error {
+func assignHttpVersion(version string) (string, error) {
 	if version != "HTTP/1.1" {
-		return ErrorInvalidHTTPVersion{
+		return "", &ErrorParsingRequestInvalidVersion{
 			Version: version,
 		}
 	}
 	parts := strings.Split(version, "/")
 	if len(parts) != 2 {
-		return ErrorInvalidHTTPVersion{
+		return "", &ErrorParsingRequestInvalidVersion{
 			Version: version,
 		}
 	}
-	r.RequestLine.HttpVersion = parts[1]
-	return nil
+	return parts[1], nil
 }

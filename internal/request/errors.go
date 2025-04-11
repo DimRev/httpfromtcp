@@ -2,68 +2,62 @@ package request
 
 import "fmt"
 
-type ErrorReadingRequest struct {
+type ErrorIncompleteRequest struct{}
+
+func (e *ErrorIncompleteRequest) Error() string {
+	return "error: incomplete request"
+}
+
+type ErrorUnexpectedReadError struct {
 	Err error
 }
 
-func (e *ErrorReadingRequest) Error() string {
-	return fmt.Sprintf("error reading request: %v", e.Err)
+func (e *ErrorUnexpectedReadError) Error() string {
+	return fmt.Sprintf("error: reading request: %s", e.Err.Error())
 }
 
-func (e *ErrorReadingRequest) Unwrap() error {
-	return e.Err
+type ErrorParsingUnknownState struct {
+	State requestState
 }
 
-type ErrorIncompleteRequest struct{}
-
-func (e ErrorIncompleteRequest) Error() string {
-	return "incomplete request: missing header termination"
+func (e *ErrorParsingUnknownState) Error() string {
+	return fmt.Sprintf("error: unknown state %d", e.State)
 }
 
-type ErrorInvalidRequestLine struct {
+type ErrorParsingTryingToReadAfterDone struct{}
+
+func (e *ErrorParsingTryingToReadAfterDone) Error() string {
+	return "error: trying to read after done"
+}
+
+type ErrorParsingRequestLineMalformed struct {
 	Line string
 }
 
-func (e ErrorInvalidRequestLine) Error() string {
-	return fmt.Sprintf("invalid request line: %s", e.Line)
+func (e *ErrorParsingRequestLineMalformed) Error() string {
+	return fmt.Sprintf("error: malformed request line: %s", e.Line)
 }
 
-type ErrorInvalidMethod struct {
+type ErrorParsingRequestInvalidMethod struct {
 	Method string
 }
 
-func (e ErrorInvalidMethod) Error() string {
-	return fmt.Sprintf("invalid method: %s", e.Method)
+func (e *ErrorParsingRequestInvalidMethod) Error() string {
+	return fmt.Sprintf("error: invalid method: %s", e.Method)
 }
 
-type ErrorInvalidRequestTarget struct {
+type ErrorParsingRequestInvalidTarget struct {
 	Target string
 }
 
-func (e ErrorInvalidRequestTarget) Error() string {
-	return fmt.Sprintf("invalid request target: %s", e.Target)
+func (e *ErrorParsingRequestInvalidTarget) Error() string {
+	return fmt.Sprintf("error: invalid target: %s", e.Target)
 }
 
-type ErrorInvalidHTTPVersion struct {
+type ErrorParsingRequestInvalidVersion struct {
 	Version string
 }
 
-func (e ErrorInvalidHTTPVersion) Error() string {
-	return fmt.Sprintf("invalid http version: %s", e.Version)
-}
-
-type ErrorInvalidHTTPVersionFormat struct {
-	Version string
-}
-
-func (e ErrorInvalidHTTPVersionFormat) Error() string {
-	return fmt.Sprintf("invalid http version format: %s", e.Version)
-}
-
-type ErrorInvalidHeaderLine struct {
-	HeaderLine string
-}
-
-func (e ErrorInvalidHeaderLine) Error() string {
-	return fmt.Sprintf("invalid header line: %s", e.HeaderLine)
+func (e *ErrorParsingRequestInvalidVersion) Error() string {
+	return fmt.Sprintf("error: invalid version: %s", e.Version)
 }
