@@ -1,4 +1,4 @@
-package header
+package headers
 
 type ErrorParsingHeaderMalformed struct {
 	Line string
@@ -22,4 +22,20 @@ type ErrorParsingHeaderTrailingSpaceInKey struct {
 
 func (e *ErrorParsingHeaderTrailingSpaceInKey) Error() string {
 	return "error: trailing white space in key in header line: " + e.Line
+}
+
+type ErrorParsingHeaderMalformedKey struct {
+	Line string
+}
+
+func (e *ErrorParsingHeaderMalformedKey) Error() string {
+	return "error: malformed key in header line: " + e.Line
+}
+
+type ErrorParsingHeaderEmptyKey struct {
+	Line string
+}
+
+func (e *ErrorParsingHeaderEmptyKey) Error() string {
+	return "error: empty key in header line: " + e.Line
 }
