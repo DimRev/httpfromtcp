@@ -298,8 +298,12 @@ func TestRequestLineParse(t *testing.T) {
 
 		_, err = RequestFromReader(NewChunkReader("POST", "/test", "HTTP/1.1", []string{"Content-Length: 3"}, "Hello World!\n", 10))
 		require.Error(t, err)
+		var errInvalidBodySize *ErrorParsingBodyInvalidBodySize
+		require.True(t, errors.As(err, &errInvalidBodySize), "Expected error for invalid body size")
 
 		_, err = RequestFromReader(NewChunkReader("POST", "/test", "HTTP/1.1", []string{"Content-Length: 15"}, "Hello World!\n", 10))
 		require.Error(t, err)
+		var errInvalidBodySize2 *ErrorParsingBodyInvalidBodySize
+		require.True(t, errors.As(err, &errInvalidBodySize2), "Expected error for invalid body size")
 	})
 }

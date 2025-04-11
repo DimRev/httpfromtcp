@@ -257,10 +257,3 @@ func assignHttpVersion(version string) (string, error) {
 	}
 	return parts[1], nil
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
