@@ -5,6 +5,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/DimRev/httpfromtcp/internal/headers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,6 +81,9 @@ func TestRequestLineParse(t *testing.T) {
 		assert.Equal(t, "GET", r.RequestLine.Method)
 		assert.Equal(t, "/", r.RequestLine.RequestTarget)
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+		assert.Equal(t, "localhost:42069", r.Headers["host"])
+		assert.Equal(t, "curl/7.81.0", r.Headers["user-agent"])
+		assert.Equal(t, "*/*", r.Headers["accept"])
 
 		// POST method
 		reader = NewChunkReader("POST", "/submit", "HTTP/1.1", headers, "", 3)
@@ -89,6 +93,9 @@ func TestRequestLineParse(t *testing.T) {
 		assert.Equal(t, "POST", r.RequestLine.Method)
 		assert.Equal(t, "/submit", r.RequestLine.RequestTarget)
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+		assert.Equal(t, "localhost:42069", r.Headers["host"])
+		assert.Equal(t, "curl/7.81.0", r.Headers["user-agent"])
+		assert.Equal(t, "*/*", r.Headers["accept"])
 
 		// PUT method
 		reader = NewChunkReader("PUT", "/update", "HTTP/1.1", headers, "", 3)
@@ -98,6 +105,9 @@ func TestRequestLineParse(t *testing.T) {
 		assert.Equal(t, "PUT", r.RequestLine.Method)
 		assert.Equal(t, "/update", r.RequestLine.RequestTarget)
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+		assert.Equal(t, "localhost:42069", r.Headers["host"])
+		assert.Equal(t, "curl/7.81.0", r.Headers["user-agent"])
+		assert.Equal(t, "*/*", r.Headers["accept"])
 
 		// DELETE method
 		reader = NewChunkReader("DELETE", "/resource", "HTTP/1.1", headers, "", 3)
@@ -107,6 +117,9 @@ func TestRequestLineParse(t *testing.T) {
 		assert.Equal(t, "DELETE", r.RequestLine.Method)
 		assert.Equal(t, "/resource", r.RequestLine.RequestTarget)
 		assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+		assert.Equal(t, "localhost:42069", r.Headers["host"])
+		assert.Equal(t, "curl/7.81.0", r.Headers["user-agent"])
+		assert.Equal(t, "*/*", r.Headers["accept"])
 	})
 
 	// Group 2: Invalid methods
@@ -249,5 +262,23 @@ func TestRequestLineParse(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, r)
 		}
+	})
+
+	// Group 9: Malformed headers
+	t.Run("malformed headers", func(t *testing.T) {
+		_, err := RequestFromReader(NewChunkReader("GET", "/", "HTTP/1.1", []string{"Host : localhost:42069"}, "", 3))
+		require.Error(t, err)
+		var errInvalidHeader *headers.ErrorParsingHeaderTrailingSpaceInKey
+		require.True(t, errors.As(err, &errInvalidHeader), "Expected error for malformed header")
+
+		_, err = RequestFromReader(NewChunkReader("GET", "/", "HTTP/1.1", []string{"Host localhost:42069"}, "", 3))
+		require.Error(t, err)
+		var errInvalidHeaderKV *headers.ErrorParsingHeaderKeyValuePairMissing
+		require.True(t, errors.As(err, &errInvalidHeaderKV), "Expected error for malformed header")
+
+		_, err = RequestFromReader(NewChunkReader("GET", "/", "HTTP/1.1", []string{"H@st: localhost:42069"}, "", 3))
+		require.Error(t, err)
+		var errInvalidHeaderMalformedKey *headers.ErrorParsingHeaderMalformedKey
+		require.True(t, errors.As(err, &errInvalidHeaderMalformedKey), "Expected error for malformed header")
 	})
 }

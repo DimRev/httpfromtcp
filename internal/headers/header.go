@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-
-	"github.com/DimRev/httpfromtcp/internal/request"
 )
 
 type Headers map[string]string
@@ -33,6 +31,8 @@ var validKeyChars = map[rune]bool{
 	'^': true, '_': true, '`': true, '|': true, '~': true,
 }
 
+const CRLF = "\r\n"
+
 func NewHeaders() Headers {
 	return Headers{}
 }
@@ -40,13 +40,13 @@ func NewHeaders() Headers {
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	totalBytesParsed := 0
 	for {
-		idx := bytes.Index(data, []byte(request.CRLF))
+		idx := bytes.Index(data, []byte(CRLF))
 		if idx == -1 {
 			return totalBytesParsed, false, nil
 		}
 
 		if idx == 0 || strings.TrimSpace(string(data[:idx])) == "" {
-			return totalBytesParsed + len(request.CRLF), true, nil
+			return totalBytesParsed + len(CRLF), true, nil
 		}
 
 		key, value, err := validateHeader(string(data[:idx]))
@@ -61,8 +61,8 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 			h[strings.ToLower(key)] = value
 		}
 
-		totalBytesParsed += idx + len(request.CRLF)
-		data = data[idx+len(request.CRLF):]
+		totalBytesParsed += idx + len(CRLF)
+		data = data[idx+len(CRLF):]
 	}
 }
 

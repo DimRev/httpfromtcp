@@ -6,13 +6,17 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"github.com/DimRev/httpfromtcp/internal/headers"
 	// Import errors package if you use custom error types defined elsewhere
 	// "errors"
 )
 
 type Request struct {
 	RequestLine RequestLine
-	state       requestState
+	Headers     headers.Headers
+
+	state requestState
 }
 
 type RequestLine struct {
@@ -28,6 +32,7 @@ type requestState int
 
 const (
 	requestStateInitialized requestState = iota
+	requestStateParsingHeaders
 	requestStateDone
 )
 
@@ -43,7 +48,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, BUFFER_SIZE)
 	readToIndex := 0
 	req := &Request{
-		state: requestStateInitialized,
+		Headers: headers.NewHeaders(),
+		state:   requestStateInitialized,
 	}
 
 	for req.state != requestStateDone {
@@ -88,7 +94,16 @@ func (r *Request) parse(currentBuffer []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = *requestLine
-		r.state = requestStateDone
+		r.state = requestStateParsingHeaders
+		return n, nil
+	case requestStateParsingHeaders:
+		n, done, err := r.Headers.Parse(currentBuffer)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.state = requestStateDone
+		}
 		return n, nil
 	case requestStateDone:
 		return 0, &ErrorParsingTryingToReadAfterDone{}
