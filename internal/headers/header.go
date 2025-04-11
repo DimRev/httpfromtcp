@@ -66,6 +66,14 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 }
 
+func (h Headers) Get(key string) string {
+	val, exists := h[strings.ToLower(key)]
+	if !exists {
+		return ""
+	}
+	return val
+}
+
 func validateHeader(line string) (key, value string, err error) {
 	parts := strings.Split(line, ": ")
 	if len(parts) != 2 {

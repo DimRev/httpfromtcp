@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/DimRev/httpfromtcp/internal/headers"
@@ -34,6 +35,7 @@ type requestState int
 const (
 	requestStateInitialized requestState = iota
 	requestStateParsingHeaders
+	requestStateParsingBody
 	requestStateDone
 )
 
@@ -64,6 +66,24 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		numBytesRead, err := reader.Read(buf[readToIndex:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if req.state == requestStateParsingBody {
+					contentLengthStr := req.Headers.Get("content-length")
+					if contentLengthStr != "" {
+						contentLength, err := strconv.Atoi(contentLengthStr)
+						if err != nil {
+							return nil, &ErrorParsingBodyInvalidContentLength{
+								ContentLength: contentLengthStr,
+							}
+						}
+						if len(req.Body) != contentLength {
+							return nil, &ErrorParsingBodyInvalidBodySize{
+								ContentLength: contentLength,
+								BodySize:      len(req.Body),
+								Body:          req.Body,
+							}
+						}
+					}
+				}
 				if req.state != requestStateDone {
 					return nil, &ErrorIncompleteRequest{}
 				}
@@ -82,6 +102,25 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		copy(buf, buf[numBytesParsed:])
 		readToIndex -= numBytesParsed
 	}
+
+	contentLengthStr := req.Headers.Get("content-length")
+	if contentLengthStr != "" {
+		contentLength, err := strconv.Atoi(contentLengthStr)
+		if err != nil {
+			return nil, &ErrorParsingBodyInvalidContentLength{
+				ContentLength: contentLengthStr,
+			}
+		}
+
+		if len(req.Body) != contentLength {
+			return nil, &ErrorParsingBodyInvalidBodySize{
+				ContentLength: contentLength,
+				BodySize:      len(req.Body),
+				Body:          req.Body,
+			}
+		}
+	}
+
 	return req, nil
 }
 
@@ -104,14 +143,52 @@ func (r *Request) parse(currentBuffer []byte) (int, error) {
 			return 0, err
 		}
 		if done {
+			r.state = requestStateParsingBody
+			if r.Headers.Get("content-length") == "" {
+				r.state = requestStateDone
+			}
+		}
+		return n, nil
+	case requestStateParsingBody:
+		contentLengthStr := r.Headers.Get("content-length")
+		if contentLengthStr == "" {
+			r.state = requestStateDone
+			return 0, nil
+		}
+
+		contentLength, err := strconv.Atoi(contentLengthStr)
+		if err != nil {
+			return 0, &ErrorParsingBodyInvalidContentLength{
+				ContentLength: r.Headers.Get("content-length"),
+			}
+		}
+
+		bytesToRead := len(currentBuffer)
+		newBody, n, err := parseBody(
+			currentBuffer[:bytesToRead],
+			r.Body,
+		)
+		if err != nil {
+			return 0, err
+		}
+
+		r.Body = newBody
+
+		if len(r.Body) >= contentLength {
 			r.state = requestStateDone
 		}
+
 		return n, nil
 	case requestStateDone:
 		return 0, &ErrorParsingTryingToReadAfterDone{}
 	default:
 		return 0, &ErrorParsingUnknownState{State: r.state}
 	}
+}
+
+func parseBody(data, origBody []byte) ([]byte, int, error) {
+	newBody := append(origBody, data...)
+	return newBody, len(data), nil
 }
 
 func parseRequestLine(data []byte) (*RequestLine, int, error) {
@@ -179,4 +256,11 @@ func assignHttpVersion(version string) (string, error) {
 		}
 	}
 	return parts[1], nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

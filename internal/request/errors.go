@@ -61,3 +61,21 @@ type ErrorParsingRequestInvalidVersion struct {
 func (e *ErrorParsingRequestInvalidVersion) Error() string {
 	return fmt.Sprintf("error: invalid version: %s", e.Version)
 }
+
+type ErrorParsingBodyInvalidContentLength struct {
+	ContentLength string
+}
+
+func (e *ErrorParsingBodyInvalidContentLength) Error() string {
+	return fmt.Sprintf("error: invalid content length: %s", e.ContentLength)
+}
+
+type ErrorParsingBodyInvalidBodySize struct {
+	ContentLength int
+	BodySize      int
+	Body          []byte
+}
+
+func (e *ErrorParsingBodyInvalidBodySize) Error() string {
+	return fmt.Sprintf("error: invalid body size: content-length: %d, body size: %d, body: %s", e.ContentLength, e.BodySize, string(e.Body))
+}
