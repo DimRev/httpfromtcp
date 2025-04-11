@@ -15,6 +15,7 @@ import (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 
 	state requestState
 }
@@ -49,6 +50,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	readToIndex := 0
 	req := &Request{
 		Headers: headers.NewHeaders(),
+		Body:    []byte{},
 		state:   requestStateInitialized,
 	}
 
