@@ -34,6 +34,14 @@ func (e *ErrorWritingBody) Error() string {
 	return fmt.Sprintf("error: writing body: %v", e.Err)
 }
 
+type ErrorWritingChunkedBody struct {
+	Err error
+}
+
+func (e *ErrorWritingChunkedBody) Error() string {
+	return fmt.Sprintf("error: writing chunked body: %v", e.Err)
+}
+
 type ErrorInvalidWriterState struct {
 	CurrentState  writerState
 	ExpectedState writerState

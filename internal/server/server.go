@@ -56,22 +56,15 @@ func (s *Server) listen() {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
-	w := response.NewWriter()
+	w := response.NewWriter(conn)
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
 		fmt.Printf("Error parsing request:\n- %v\n", err)
 		w.WriteStatusLine(response.StatusBadRequest)
 		w.WriteHeaders(response.GetDefaultHeaders(len(err.Error())))
 		w.WriteBody([]byte(err.Error()))
-		w.Write(conn)
 		return
 	}
 
 	s.handler(w, req)
-
-	err = w.Write(conn)
-	if err != nil {
-		fmt.Printf("Error writing response:\n- %v\n", err)
-		return
-	}
 }
