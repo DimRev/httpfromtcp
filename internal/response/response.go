@@ -10,36 +10,29 @@ import (
 type StatusCode int
 
 const (
-	StatusOK          StatusCode = 200
-	StatusBadRequest  StatusCode = 400
-	StatusServerError StatusCode = 500
+	StatusOK                  StatusCode = 200
+	StatusBadRequest          StatusCode = 400
+	StatusInternalServerError StatusCode = 500
 )
 
 const CRLF = "\r\n"
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
+func getStatusLine(statusCode StatusCode) []byte {
+	reasonPhrase := ""
 	switch statusCode {
 	case StatusOK:
-		_, err := w.Write([]byte("HTTP/1.1 200 OK\r\n"))
-		if err != nil {
-			return &ErrorWritingStatusLine{Err: err}
-		}
-		return nil
+		reasonPhrase = "OK"
 	case StatusBadRequest:
-		_, err := w.Write([]byte("HTTP/1.1 400 Bad Request\r\n"))
-		if err != nil {
-			return &ErrorWritingStatusLine{Err: err}
-		}
-		return nil
-	case StatusServerError:
-		_, err := w.Write([]byte("HTTP/1.1 500 Server Error\r\n"))
-		if err != nil {
-			return &ErrorWritingStatusLine{Err: err}
-		}
-		return nil
-	default:
-		return &ErrorInvalidStatusCode{StatusCode: int(statusCode)}
+		reasonPhrase = "Bad Request"
+	case StatusInternalServerError:
+		reasonPhrase = "Internal Server Error"
 	}
+	return []byte(fmt.Sprintf("HTTP/1.1 %d %s\r\n", statusCode, reasonPhrase))
+}
+
+func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
+	_, err := w.Write(getStatusLine(statusCode))
+	return err
 }
 
 func GetDefaultHeaders(contentLen int) headers.Headers {
