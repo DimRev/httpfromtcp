@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
+
+	"github.com/DimRev/httpfromtcp/internal/response"
 )
 
 type Server struct {
@@ -59,15 +61,17 @@ func (s *Server) listen() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	resp := "HTTP/1.1 200 OK\r\n" +
-		"Content-Length: 13\r\n" +
-		"Connection: close\r\n" +
-		"\r\n" +
-		"Hello World!"
 
-	_, err := conn.Write([]byte(resp))
+	err := response.WriteStatusLine(conn, response.StatusOK)
 	if err != nil {
-		fmt.Printf("Error writing to connection: %v\n", err)
+		fmt.Printf("Error writing status line: %v\n", err)
+		return
 	}
-	return
+
+	err = response.WriteHeaders(conn, response.GetDefaultHeaders(0))
+	if err != nil {
+		fmt.Printf("Error writing headers: %v\n", err)
+		return
+	}
+
 }

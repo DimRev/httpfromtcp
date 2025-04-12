@@ -74,6 +74,23 @@ func (h Headers) Get(key string) string {
 	return val
 }
 
+func (h Headers) Set(key, value string) {
+	curr, exists := h[strings.ToLower(key)]
+	if exists {
+		h[strings.ToLower(key)] = fmt.Sprintf("%s, %s", curr, value)
+	} else {
+		h[strings.ToLower(key)] = value
+	}
+}
+
+func (h Headers) Replace(key, value string) {
+	h[strings.ToLower(key)] = value
+}
+
+func (h Headers) Delete(key string) {
+	delete(h, strings.ToLower(key))
+}
+
 func validateHeader(line string) (key, value string, err error) {
 	parts := strings.Split(line, ": ")
 	if len(parts) != 2 {
