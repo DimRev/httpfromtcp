@@ -44,19 +44,3 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 
 	return h
 }
-
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
-	for key, value := range headers {
-		_, err := w.Write([]byte(fmt.Sprintf("%s: %s\r\n", key, value)))
-		if err != nil {
-			return &ErrorWritingHeaders{Err: err}
-		}
-	}
-
-	_, err := w.Write([]byte(CRLF))
-	if err != nil {
-		return &ErrorWritingHeaders{Err: err}
-	}
-
-	return nil
-}

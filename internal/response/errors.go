@@ -25,3 +25,20 @@ type ErrorWritingHeaders struct {
 func (e *ErrorWritingHeaders) Error() string {
 	return fmt.Sprintf("error: writing headers: %v", e.Err)
 }
+
+type ErrorWritingBody struct {
+	Err error
+}
+
+func (e *ErrorWritingBody) Error() string {
+	return fmt.Sprintf("error: writing body: %v", e.Err)
+}
+
+type ErrorInvalidWriterState struct {
+	CurrentState  writerState
+	ExpectedState writerState
+}
+
+func (e *ErrorInvalidWriterState) Error() string {
+	return fmt.Sprintf("error: invalid writer state: current=%d, expected=%d", e.CurrentState, e.ExpectedState)
+}
